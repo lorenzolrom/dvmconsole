@@ -305,7 +305,8 @@ namespace dvmconsole
                 TextBlock headerText = new TextBlock
                 {
                     Text = "Tab 1",
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = settingsManager.DarkMode ? Brushes.White : Brushes.Black
                 };
                 headerPanel.Children.Add(headerText);
                 
@@ -363,7 +364,8 @@ namespace dvmconsole
             TextBlock headerText = new TextBlock
             {
                 Text = tabName,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = settingsManager.DarkMode ? Brushes.White : Brushes.Black
             };
             headerPanel.Children.Add(headerText);
             
@@ -1333,6 +1335,61 @@ namespace dvmconsole
         }
 
         /// <summary>
+        /// Updates the text color of all tab headers based on dark mode setting
+        /// </summary>
+        private void UpdateTabTextColors()
+        {
+            Brush textColor = settingsManager.DarkMode ? Brushes.White : Brushes.Black;
+            
+            foreach (var kvp in tabHeaders)
+            {
+                StackPanel headerPanel = kvp.Value;
+                foreach (UIElement child in headerPanel.Children)
+                {
+                    if (child is TextBlock textBlock)
+                    {
+                        textBlock.Foreground = textColor;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Updates the selected tab background color based on dark mode setting
+        /// </summary>
+        private void UpdateTabSelectedBackground()
+        {
+            // Update the style for selected tab background
+            if (resourceTabs.Resources["TabItemStyle"] is Style tabStyle)
+            {
+                // Find the IsSelected trigger and update its background setter
+                foreach (var trigger in tabStyle.Triggers)
+                {
+                    if (trigger is Trigger selectedTrigger && selectedTrigger.Property.Name == "IsSelected")
+                    {
+                        foreach (var setter in selectedTrigger.Setters)
+                        {
+                            if (setter.Property.Name == "Background")
+                            {
+                                setter.Value = new SolidColorBrush(Colors.LightGray);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Force refresh of all tabs
+            foreach (TabItem tab in resourceTabs.Items)
+            {
+                if (tab.IsSelected)
+                {
+                    tab.Background = new SolidColorBrush(Colors.LightGray);
+                }
+            }
+        }
+
+        /// <summary>
         /// Applies the current background (user-defined or default) to all tab canvases
         /// </summary>
         private void ApplyCurrentBackgroundToAllTabs()
@@ -1388,6 +1445,10 @@ namespace dvmconsole
                 theme.SetBaseTheme(BaseTheme.Light);
 
             paletteHelper.SetTheme(theme);
+
+            // Update tab text colors and selected background based on dark mode
+            UpdateTabTextColors();
+            UpdateTabSelectedBackground();
 
             BitmapImage bg = new BitmapImage();
 

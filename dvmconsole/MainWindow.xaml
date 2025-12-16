@@ -172,11 +172,20 @@
         <TabControl x:Name="resourceTabs" Grid.Row="2" Grid.ColumnSpan="2" Grid.RowSpan="2"
                     materialDesign:ColorZoneAssist.Mode="PrimaryLight" Background="{DynamicResource MaterialDesignPaper}">
             <TabControl.Resources>
-                <Style TargetType="TabItem">
+                <Style x:Key="TabItemStyle" TargetType="TabItem">
                     <Setter Property="Padding" Value="12,8"/>
                     <Setter Property="Background" Value="{DynamicResource MaterialDesignPaper}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="LightGray"/>
+                        </Trigger>
+                    </Style.Triggers>
                 </Style>
             </TabControl.Resources>
+            <TabControl.ItemContainerStyle>
+                <StaticResource ResourceKey="TabItemStyle"/>
+            </TabControl.ItemContainerStyle>
         </TabControl>
 
         <!-- Channel Widget Canvas (will be moved to first tab) -->
