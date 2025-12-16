@@ -177,12 +177,9 @@
                     <Setter Property="Background" Value="{DynamicResource MaterialDesignPaper}"/>
                     <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}"/>
                     <Style.Triggers>
-                        <MultiTrigger>
-                            <MultiTrigger.Conditions>
-                                <Condition Property="IsMouseOver" Value="True"/>
-                            </MultiTrigger.Conditions>
+                        <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="Background" Value="#888888"/>
-                        </MultiTrigger>
+                        </Trigger>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter Property="Background" Value="#888888"/>
                         </Trigger>
