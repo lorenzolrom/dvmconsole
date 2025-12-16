@@ -1359,12 +1359,15 @@ namespace dvmconsole
         /// </summary>
         private void UpdateTabSelectedBackground()
         {
-            // Force refresh of all tabs - update selected tab background
+            // Use darker grey (#888888) for selected/hovered tabs in dark mode, light grey in light mode
+            Color selectedColor = settingsManager.DarkMode ? (Color)ColorConverter.ConvertFromString("#888888") : Colors.LightGray;
+            
+            // Update all tabs - set background for selected tabs
             foreach (TabItem tab in resourceTabs.Items)
             {
                 if (tab.IsSelected)
                 {
-                    tab.Background = new SolidColorBrush(Colors.LightGray);
+                    tab.Background = new SolidColorBrush(selectedColor);
                 }
             }
         }
