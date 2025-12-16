@@ -194,6 +194,9 @@ namespace dvmconsole
             btnGlobalPtt.PreviewMouseLeftButtonDown += btnGlobalPtt_MouseLeftButtonDown;
             btnGlobalPtt.PreviewMouseLeftButtonUp += btnGlobalPtt_MouseLeftButtonUp;
             btnGlobalPtt.MouseRightButtonDown += btnGlobalPtt_MouseRightButtonDown;
+            
+            // Handle tab selection changes to update background
+            resourceTabs.SelectionChanged += ResourceTabs_SelectionChanged;
 
             selectedChannelsManager.SelectedChannelsChanged += SelectedChannelsChanged;
             selectedChannelsManager.PrimaryChannelChanged += PrimaryChannelChanged;
@@ -295,6 +298,12 @@ namespace dvmconsole
                 // No zones defined, create a default tab
                 TabItem firstTab = new TabItem();
                 
+                // Apply the tab style from resources
+                if (resourceTabs.Resources["TabItemStyle"] is Style tabStyle)
+                {
+                    firstTab.Style = tabStyle;
+                }
+                
             // Create a custom header with text and optional audio icon
             StackPanel headerPanel = new StackPanel
             {
@@ -353,6 +362,12 @@ namespace dvmconsole
         private TabItem CreateNewTab(string tabName)
         {
             TabItem tab = new TabItem();
+            
+            // Apply the tab style from resources
+            if (resourceTabs.Resources["TabItemStyle"] is Style tabStyle)
+            {
+                tab.Style = tabStyle;
+            }
             
             // Create a custom header with text and optional audio icon
             StackPanel headerPanel = new StackPanel
@@ -1355,17 +1370,34 @@ namespace dvmconsole
         }
 
         /// <summary>
+        /// Handles tab selection changes to update background colors
+        /// </summary>
+        private void ResourceTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateTabSelectedBackground();
+        }
+
+        /// <summary>
         /// Updates the selected tab background color based on dark mode setting
         /// </summary>
         private void UpdateTabSelectedBackground()
         {
-            // The XAML style triggers handle the background automatically
-            // We just need to ensure unselected tabs reset to default
+            // Ensure all tabs have the style applied
             foreach (TabItem tab in resourceTabs.Items)
             {
-                if (!tab.IsSelected)
+                if (tab.Style == null && resourceTabs.Resources["TabItemStyle"] is Style tabStyle)
                 {
-                    // Reset to default background so the style can manage it
+                    tab.Style = tabStyle;
+                }
+                
+                // Force update of selected tab background
+                if (tab.IsSelected)
+                {
+                    tab.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#888888"));
+                }
+                else
+                {
+                    // Clear background for unselected tabs to let style handle it
                     tab.ClearValue(TabItem.BackgroundProperty);
                 }
             }
