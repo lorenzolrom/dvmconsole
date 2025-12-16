@@ -1359,27 +1359,7 @@ namespace dvmconsole
         /// </summary>
         private void UpdateTabSelectedBackground()
         {
-            // Update the style for selected tab background
-            if (resourceTabs.Resources["TabItemStyle"] is Style tabStyle)
-            {
-                // Find the IsSelected trigger and update its background setter
-                foreach (var trigger in tabStyle.Triggers)
-                {
-                    if (trigger is Trigger selectedTrigger && selectedTrigger.Property.Name == "IsSelected")
-                    {
-                        foreach (var setter in selectedTrigger.Setters)
-                        {
-                            if (setter.Property.Name == "Background")
-                            {
-                                setter.Value = new SolidColorBrush(Colors.LightGray);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Force refresh of all tabs
+            // Force refresh of all tabs - update selected tab background
             foreach (TabItem tab in resourceTabs.Items)
             {
                 if (tab.IsSelected)
