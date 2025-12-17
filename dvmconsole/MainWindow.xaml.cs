@@ -46,6 +46,7 @@ using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using System.Net.Sockets;
 using NAudio;
+using NAudio.CoreAudioApi;
 
 namespace dvmconsole
 {
@@ -106,6 +107,7 @@ namespace dvmconsole
         private bool windowLoaded = false;
         
         // Tab management
+        private Dictionary<TabItem, ScrollViewer> tabScrollViewers = new Dictionary<TabItem, ScrollViewer>();
         private Dictionary<TabItem, Canvas> tabCanvases = new Dictionary<TabItem, Canvas>();
         private Dictionary<UIElement, TabItem> elementToTabMap = new Dictionary<UIElement, TabItem>();
         private Dictionary<TabItem, StackPanel> tabHeaders = new Dictionary<TabItem, StackPanel>();
@@ -259,7 +261,8 @@ namespace dvmconsole
             
             // Now we can safely assign it to the tab
             firstTab.Content = canvasScrollViewer;
-            
+
+            tabScrollViewers[firstTab] = canvasScrollViewer;
             tabCanvases[firstTab] = channelsCanvas;
             resourceTabs.Items.Add(firstTab);
             resourceTabs.SelectedItem = firstTab;
@@ -347,6 +350,7 @@ namespace dvmconsole
                 }
                 
                 firstTab.Content = canvasScrollViewer;
+                tabScrollViewers[firstTab] = canvasScrollViewer;
                 tabCanvases[firstTab] = channelsCanvas;
                 resourceTabs.Items.Add(firstTab);
                 resourceTabs.SelectedItem = firstTab;
@@ -410,7 +414,7 @@ namespace dvmconsole
             
             Canvas canvas = new Canvas
             {
-                VerticalAlignment = VerticalAlignment.Top
+                VerticalAlignment = VerticalAlignment.Top,
             };
             
             // Set background from original canvas or channelsCanvasBg
@@ -438,13 +442,14 @@ namespace dvmconsole
             
             scrollViewer.Content = canvas;
             tab.Content = scrollViewer;
-            
+
+            tabScrollViewers[tab] = scrollViewer;
             tabCanvases[tab] = canvas;
-            resourceTabs.Items.Add(tab);
             
             // Hook up property changed to track audio state
             tab.DataContext = tab;
-            
+
+            resourceTabs.Items.Add(tab);
             return tab;
         }
         
@@ -751,6 +756,7 @@ namespace dvmconsole
                 // generate widgets and enable controls
                 GenerateChannelWidgets();
                 EnableControls();
+                MainWindow_SizeChanged(this, null);
             }
             catch (Exception ex)
             {
@@ -821,7 +827,7 @@ namespace dvmconsole
             Canvas defaultCanvas = defaultTab != null && tabCanvases.ContainsKey(defaultTab) 
                 ? tabCanvases[defaultTab] 
                 : channelsCanvas;
-            
+
             if (Codeplug != null)
             {
                 // Track offset for system status boxes (add to default tab)
@@ -1777,6 +1783,28 @@ namespace dvmconsole
             else
                 canvasScrollViewer.Height = Height - heightOffset;
 
+            foreach (KeyValuePair<TabItem, ScrollViewer> kvp in tabScrollViewers)
+            {
+                if (ActualWidth > channelsCanvas.ActualWidth)
+                    kvp.Value.Width = ActualWidth;
+                else
+                    kvp.Value.Width = Width - widthOffset;
+
+                if (ActualHeight > channelsCanvas.ActualHeight)
+                    kvp.Value.Height = ActualHeight;
+                else
+                    kvp.Value.Height = Height - heightOffset;
+            }
+
+            foreach (KeyValuePair<TabItem, Canvas> kvp in tabCanvases)
+            {
+                if (ActualWidth > channelsCanvas.ActualWidth)
+                    kvp.Value.Width = ActualWidth;
+
+                if (ActualHeight > channelsCanvas.ActualHeight)
+                    kvp.Value.Height = ActualHeight;
+            }
+
             if (WindowState == WindowState.Maximized)
                 ResizeCanvasToWindow_Click(sender, e);
             else
@@ -1849,6 +1877,25 @@ namespace dvmconsole
                     canvasScrollViewer.Height = Height - heightOffset;
                 else
                     canvasScrollViewer.Height = Height;
+
+                foreach (KeyValuePair<TabItem, ScrollViewer> kvp in tabScrollViewers)
+                {
+                    if (settingsManager.CanvasWidth > settingsManager.WindowWidth)
+                        kvp.Value.Width = Width - widthOffset;
+                    else
+                        kvp.Value.Width = Width;
+
+                    if (settingsManager.CanvasHeight > settingsManager.WindowHeight)
+                        kvp.Value.Height = Height - heightOffset;
+                    else
+                        kvp.Value.Height = Height;
+                }
+
+                foreach (KeyValuePair<TabItem, Canvas> kvp in tabCanvases)
+                {
+                    kvp.Value.Width = settingsManager.CanvasWidth;
+                    kvp.Value.Height = settingsManager.CanvasHeight;
+                }
 
                 windowLoaded = true;
             }
@@ -2378,6 +2425,18 @@ namespace dvmconsole
             canvasScrollViewer.Width = ActualWidth;
             channelsCanvas.Height = ActualHeight;
             canvasScrollViewer.Height = ActualHeight;
+
+            foreach (KeyValuePair<TabItem, ScrollViewer> kvp in tabScrollViewers)
+            {
+                kvp.Value.Width = ActualWidth;
+                kvp.Value.Height = ActualHeight;
+            }
+
+            foreach (KeyValuePair<TabItem, Canvas> kvp in tabCanvases)
+            {
+                kvp.Value.Width = ActualWidth;
+                kvp.Value.Height = ActualHeight;
+            }
 
             settingsManager.CanvasWidth = ActualWidth;
             settingsManager.CanvasHeight = ActualHeight;

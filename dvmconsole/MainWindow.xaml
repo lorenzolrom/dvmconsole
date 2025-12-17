@@ -169,12 +169,12 @@
         </ToolBarTray>
 
         <!-- Tab Control for Resource Views -->
-        <TabControl x:Name="resourceTabs" Grid.Row="2" Grid.ColumnSpan="2" Grid.RowSpan="2"
-                    materialDesign:ColorZoneAssist.Mode="PrimaryLight" Background="{DynamicResource MaterialDesignPaper}">
+        <TabControl x:Name="resourceTabs" Grid.Row="2" Grid.ColumnSpan="2" Grid.RowSpan="2" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"
+                    materialDesign:ColorZoneAssist.Mode="PrimaryLight" Background="Transparent">
             <TabControl.Resources>
-                <Style x:Key="TabItemStyle" TargetType="TabItem">
+                <Style x:Key="TabItemStyle" TargetType="{x:Type TabItem}">
                     <Setter Property="Padding" Value="12,8"/>
-                    <Setter Property="Background" Value="{DynamicResource MaterialDesignPaper}"/>
+                    <Setter Property="Background" Value="Transparent"/>
                     <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}"/>
                     <Style.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
