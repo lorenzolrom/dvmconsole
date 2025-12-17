@@ -567,7 +567,7 @@ namespace dvmconsole
         /// <summary>
         /// Gets all canvases (from all tabs plus the original)
         /// </summary>
-        private IEnumerable<Canvas> GetAllCanvases()
+        internal IEnumerable<Canvas> GetAllCanvases()
         {
             foreach (var canvas in tabCanvases.Values)
             {
