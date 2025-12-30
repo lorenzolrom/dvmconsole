@@ -141,6 +141,10 @@ namespace dvmconsole
             /// </summary>
             public string Name { get; set; }
             /// <summary>
+            /// Tab Color in Hex (#RRGGBB)
+            /// </summary>
+            public string TabColor { get; set; }
+            /// <summary>
             /// List of channels in the zone.
             /// </summary>
             public List<Channel> Channels { get; set; }

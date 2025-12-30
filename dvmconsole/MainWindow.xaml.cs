@@ -15,6 +15,7 @@
 *
 */
 
+using System.Net.Sockets;
 using System.IO;
 using System.Timers;
 using System.Windows;
@@ -23,6 +24,9 @@ using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+
+using NAudio;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NWaves.Signals;
 
@@ -39,14 +43,12 @@ using fnecore.DMR;
 using fnecore.P25;
 using fnecore.P25.KMM;
 using fnecore.P25.LC.TSBK;
+
 using Application = System.Windows.Application;
 using Cursors = System.Windows.Input.Cursors;
 using MessageBox = System.Windows.MessageBox;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
-using System.Net.Sockets;
-using NAudio;
-using NAudio.CoreAudioApi;
 
 namespace dvmconsole
 {
@@ -206,7 +208,7 @@ namespace dvmconsole
             LocationChanged += MainWindow_LocationChanged;
             SizeChanged += MainWindow_SizeChanged;
             Loaded += MainWindow_Loaded;
-            
+
             // Initialize first tab
             InitializeFirstTab();
         }
@@ -283,18 +285,14 @@ namespace dvmconsole
             if (Codeplug.Zones != null && Codeplug.Zones.Count > 0)
             {
                 foreach (var zone in Codeplug.Zones)
-                {
-                    CreateNewTab(zone.Name);
-                }
+                    CreateNewTab(zone.Name, zone.TabColor);
                 
                 // Apply current background to all newly created tabs
                 ApplyCurrentBackgroundToAllTabs();
                 
                 // Select the first tab
                 if (resourceTabs.Items.Count > 0)
-                {
                     resourceTabs.SelectedItem = resourceTabs.Items[0];
-                }
             }
             else
             {
@@ -303,9 +301,7 @@ namespace dvmconsole
                 
                 // Apply the tab style from resources
                 if (resourceTabs.Resources["TabItemStyle"] is Style tabStyle)
-                {
                     firstTab.Style = tabStyle;
-                }
                 
             // Create a custom header with text and optional audio icon
             StackPanel headerPanel = new StackPanel
@@ -363,16 +359,24 @@ namespace dvmconsole
         /// <summary>
         /// Creates a new tab with a ScrollViewer and Canvas
         /// </summary>
-        private TabItem CreateNewTab(string tabName)
+        /// <param name="tabName"></param>
+        /// <param name="tabColor"></param>
+        private TabItem CreateNewTab(string tabName, string tabColor = null)
         {
             TabItem tab = new TabItem();
             
             // Apply the tab style from resources
             if (resourceTabs.Resources["TabItemStyle"] is Style tabStyle)
-            {
                 tab.Style = tabStyle;
+
+            if (tabColor != null)
+            {
+                SolidColorBrush bgBrush = (SolidColorBrush)new BrushConverter().ConvertFrom(tabColor);
+                ColorZoneAssist.SetMode(tab, MaterialDesignThemes.Wpf.ColorZoneMode.Custom);
+                ColorZoneAssist.SetBackground(tab, bgBrush);
+                //ColorZoneAssist.SetForeground(tab, Brushes.White);
             }
-            
+
             // Create a custom header with text and optional audio icon
             StackPanel headerPanel = new StackPanel
             {
@@ -409,14 +413,12 @@ namespace dvmconsole
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
                 VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
-                CanContentScroll = false // Use pixel-based scrolling, not item-based
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch
             };
             
             Canvas canvas = new Canvas
             {
                 VerticalAlignment = VerticalAlignment.Top,
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Left
             };
             
             // Set background from original canvas or channelsCanvasBg
@@ -790,9 +792,7 @@ namespace dvmconsole
 
             // Create tabs from codeplug configuration (if codeplug exists)
             if (Codeplug != null)
-            {
                 CreateTabsFromCodeplug();
-            }
             
             // Create a dictionary to map tab names to TabItems
             Dictionary<string, TabItem> tabNameToTabItem = new Dictionary<string, TabItem>();
@@ -1001,45 +1001,13 @@ namespace dvmconsole
                             elementToTabMap[channelBox] = targetTab;
 
                         // Update offset for next channel in this tab
-                        // Use ScrollViewer viewport width if available, otherwise use window width or a default
-                        double availableWidth = 1024; // Default fallback
-                        if (targetTab != null && tabScrollViewers.ContainsKey(targetTab))
-                        {
-                            ScrollViewer sv = tabScrollViewers[targetTab];
-                            // If viewport width is available, use it; otherwise use window width
-                            availableWidth = sv.ViewportWidth > 0 ? sv.ViewportWidth : (ActualWidth > 0 ? ActualWidth - 16 : 1024);
-                        }
-                        else if (targetCanvas.ActualWidth > 0)
-                        {
-                            availableWidth = targetCanvas.ActualWidth;
-                        }
-                        else if (ActualWidth > 0)
-                        {
-                            availableWidth = ActualWidth - 16; // Account for scrollbar
-                        }
-                        
                         tabOffset.X += 269;
-                        if (tabOffset.X + 264 > availableWidth)
+                        if (tabOffset.X + 264 > targetCanvas.ActualWidth)
                         {
                             tabOffset.X = 20;
                             tabOffset.Y += 116;
                         }
                         tabOffsets[targetTab] = tabOffset;
-                    }
-                    
-                    // After placing all channels in this zone/tab, update canvas size to fit all content
-                    if (tabOffsets.ContainsKey(targetTab))
-                    {
-                        Point finalOffset = tabOffsets[targetTab];
-                        Canvas zoneCanvas = targetTab != null && tabCanvases.ContainsKey(targetTab) 
-                            ? tabCanvases[targetTab] 
-                            : channelsCanvas;
-                        double requiredWidth = Math.Max(zoneCanvas.Width, finalOffset.X + 264);
-                        double requiredHeight = Math.Max(zoneCanvas.Height, finalOffset.Y + 110);
-                        if (zoneCanvas.Width == 0 || zoneCanvas.Width < requiredWidth)
-                            zoneCanvas.Width = requiredWidth;
-                        if (zoneCanvas.Height == 0 || zoneCanvas.Height < requiredHeight)
-                            zoneCanvas.Height = requiredHeight;
                     }
                 }
             }
@@ -1426,12 +1394,18 @@ namespace dvmconsole
             foreach (TabItem tab in resourceTabs.Items)
             {
                 if (tab.Style == null && resourceTabs.Resources["TabItemStyle"] is Style tabStyle)
-                {
                     tab.Style = tabStyle;
+
+                // Force update of selected tab background
+                if (tab.IsSelected)
+                {
+                    tab.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#888888"));
                 }
-                
-                // Clear any forced background to let style handle it
-                tab.ClearValue(TabItem.BackgroundProperty);
+                else
+                {
+                    // Clear background for unselected tabs to let style handle it
+                    tab.ClearValue(TabItem.BackgroundProperty);
+                }
             }
         }
 
@@ -1811,20 +1785,24 @@ namespace dvmconsole
 
             foreach (KeyValuePair<TabItem, ScrollViewer> kvp in tabScrollViewers)
             {
-                // ScrollViewer should always match window size (minus offsets)
-                kvp.Value.Width = ActualWidth;
-                kvp.Value.Height = ActualHeight - heightOffset;
-                // Don't constrain ScrollViewer - let it scroll if content is larger
+                if (ActualWidth > channelsCanvas.ActualWidth)
+                    kvp.Value.Width = ActualWidth;
+                else
+                    kvp.Value.Width = Width - widthOffset;
+
+                if (ActualHeight > channelsCanvas.ActualHeight)
+                    kvp.Value.Height = ActualHeight;
+                else
+                    kvp.Value.Height = Height - heightOffset;
             }
 
             foreach (KeyValuePair<TabItem, Canvas> kvp in tabCanvases)
             {
-                // Don't shrink canvas if content requires more space
-                // Only grow if window is larger than current canvas
-                if (ActualWidth > kvp.Value.Width)
+                if (ActualWidth > channelsCanvas.ActualWidth)
                     kvp.Value.Width = ActualWidth;
-                // Height should grow with content, not be constrained by window
-                // (ScrollViewer will handle scrolling)
+
+                if (ActualHeight > channelsCanvas.ActualHeight)
+                    kvp.Value.Height = ActualHeight;
             }
 
             if (WindowState == WindowState.Maximized)
@@ -1902,21 +1880,21 @@ namespace dvmconsole
 
                 foreach (KeyValuePair<TabItem, ScrollViewer> kvp in tabScrollViewers)
                 {
-                    // ScrollViewer should always match window size (minus offsets)
-                    kvp.Value.Width = Width;
-                    kvp.Value.Height = Height - heightOffset;
-                    // Don't constrain ScrollViewer - let it scroll if content is larger
+                    if (settingsManager.CanvasWidth > settingsManager.WindowWidth)
+                        kvp.Value.Width = Width - widthOffset;
+                    else
+                        kvp.Value.Width = Width;
+
+                    if (settingsManager.CanvasHeight > settingsManager.WindowHeight)
+                        kvp.Value.Height = Height - heightOffset;
+                    else
+                        kvp.Value.Height = Height;
                 }
 
                 foreach (KeyValuePair<TabItem, Canvas> kvp in tabCanvases)
                 {
-                    // Canvas should be at least as large as saved size, or larger if content requires it
-                    double canvasWidth = Math.Max(settingsManager.CanvasWidth, kvp.Value.Width);
-                    double canvasHeight = Math.Max(settingsManager.CanvasHeight, kvp.Value.Height);
-                    if (canvasWidth > 0)
-                        kvp.Value.Width = canvasWidth;
-                    if (canvasHeight > 0)
-                        kvp.Value.Height = canvasHeight;
+                    kvp.Value.Width = settingsManager.CanvasWidth;
+                    kvp.Value.Height = settingsManager.CanvasHeight;
                 }
 
                 windowLoaded = true;
@@ -2430,149 +2408,34 @@ namespace dvmconsole
         {
             const double widthOffset = 16;
             const double heightOffset = 115;
-            const double channelWidth = 264;
-            const double channelHeight = 110;
-            const double channelSpacingX = 269; // 264 + 5
-            const double channelSpacingY = 116; // 110 + 6
-            const double startX = 20;
-            const double startY = 20;
             
-            // Process all tabs
+            Canvas activeCanvas = GetActiveCanvas();
+
+            foreach (UIElement child in activeCanvas.Children)
+            {
+                double childLeft = Canvas.GetLeft(child) + child.RenderSize.Width;
+                if (childLeft > ActualWidth)
+                    Canvas.SetLeft(child, ActualWidth - (child.RenderSize.Width + widthOffset));
+                double childBottom = Canvas.GetTop(child) + child.RenderSize.Height;
+                if (childBottom > ActualHeight)
+                    Canvas.SetTop(child, ActualHeight - (child.RenderSize.Height + heightOffset));
+            }
+
+            channelsCanvas.Width = ActualWidth;
+            canvasScrollViewer.Width = ActualWidth;
+            channelsCanvas.Height = ActualHeight;
+            canvasScrollViewer.Height = ActualHeight;
+
+            foreach (KeyValuePair<TabItem, ScrollViewer> kvp in tabScrollViewers)
+            {
+                kvp.Value.Width = ActualWidth;
+                kvp.Value.Height = ActualHeight;
+            }
+
             foreach (KeyValuePair<TabItem, Canvas> kvp in tabCanvases)
             {
-                TabItem tab = kvp.Key;
-                Canvas canvas = kvp.Value;
-                ScrollViewer scrollViewer = tabScrollViewers.ContainsKey(tab) ? tabScrollViewers[tab] : null;
-                
-                // Get available width from ScrollViewer viewport or window
-                double availableWidth = ActualWidth - widthOffset;
-                if (scrollViewer != null && scrollViewer.ViewportWidth > 0)
-                {
-                    availableWidth = scrollViewer.ViewportWidth;
-                }
-                
-                // Collect all ChannelBox widgets from this canvas
-                List<ChannelBox> channelBoxes = new List<ChannelBox>();
-                foreach (UIElement child in canvas.Children)
-                {
-                    if (child is ChannelBox channelBox)
-                    {
-                        channelBoxes.Add(channelBox);
-                    }
-                }
-                
-                // Recalculate positions in a table/grid layout
-                // Only rearrange boxes that don't have saved positions
-                double currentX = startX;
-                double currentY = startY;
-                double maxY = startY;
-                
-                foreach (ChannelBox channelBox in channelBoxes)
-                {
-                    // Check if this channel box has a saved position
-                    if (settingsManager.ChannelPositions.TryGetValue(channelBox.ChannelName, out var savedPosition))
-                    {
-                        // Use saved position
-                        Canvas.SetLeft(channelBox, savedPosition.X);
-                        Canvas.SetTop(channelBox, savedPosition.Y);
-                        maxY = Math.Max(maxY, savedPosition.Y + channelHeight);
-                    }
-                    else
-                    {
-                        // No saved position, arrange in grid
-                        Canvas.SetLeft(channelBox, currentX);
-                        Canvas.SetTop(channelBox, currentY);
-                        
-                        // Save the new position
-                        settingsManager.UpdateChannelPosition(channelBox.ChannelName, currentX, currentY);
-                        
-                        // Move to next position
-                        currentX += channelSpacingX;
-                        if (currentX + channelWidth > availableWidth)
-                        {
-                            currentX = startX;
-                            currentY += channelSpacingY;
-                        }
-                        maxY = Math.Max(maxY, currentY + channelHeight);
-                    }
-                }
-                
-                // Update canvas size to fit content
-                double canvasWidth = Math.Max(availableWidth, currentX + channelWidth);
-                double canvasHeight = Math.Max(ActualHeight - heightOffset, maxY);
-                
-                canvas.Width = canvasWidth;
-                canvas.Height = canvasHeight;
-                
-                // Update ScrollViewer size
-                if (scrollViewer != null)
-                {
-                    scrollViewer.Width = ActualWidth;
-                    scrollViewer.Height = ActualHeight - heightOffset;
-                }
-            }
-            
-            // Also process the original channelsCanvas if it exists and has children
-            if (channelsCanvas.Children.Count > 0)
-            {
-                double availableWidth = ActualWidth - widthOffset;
-                if (canvasScrollViewer != null && canvasScrollViewer.ViewportWidth > 0)
-                {
-                    availableWidth = canvasScrollViewer.ViewportWidth;
-                }
-                
-                List<ChannelBox> channelBoxes = new List<ChannelBox>();
-                foreach (UIElement child in channelsCanvas.Children)
-                {
-                    if (child is ChannelBox channelBox)
-                    {
-                        channelBoxes.Add(channelBox);
-                    }
-                }
-                
-                double currentX = startX;
-                double currentY = startY;
-                double maxY = startY;
-                
-                foreach (ChannelBox channelBox in channelBoxes)
-                {
-                    // Check if this channel box has a saved position
-                    if (settingsManager.ChannelPositions.TryGetValue(channelBox.ChannelName, out var savedPosition))
-                    {
-                        // Use saved position
-                        Canvas.SetLeft(channelBox, savedPosition.X);
-                        Canvas.SetTop(channelBox, savedPosition.Y);
-                        maxY = Math.Max(maxY, savedPosition.Y + channelHeight);
-                    }
-                    else
-                    {
-                        // No saved position, arrange in grid
-                        Canvas.SetLeft(channelBox, currentX);
-                        Canvas.SetTop(channelBox, currentY);
-                        
-                        settingsManager.UpdateChannelPosition(channelBox.ChannelName, currentX, currentY);
-                        
-                        currentX += channelSpacingX;
-                        if (currentX + channelWidth > availableWidth)
-                        {
-                            currentX = startX;
-                            currentY += channelSpacingY;
-                        }
-                        maxY = Math.Max(maxY, currentY + channelHeight);
-                    }
-                }
-                
-                double canvasWidth = Math.Max(availableWidth, currentX + channelWidth);
-                double canvasHeight = Math.Max(ActualHeight - heightOffset, maxY);
-                
-                channelsCanvas.Width = canvasWidth;
-                channelsCanvas.Height = canvasHeight;
-                
-                if (canvasScrollViewer != null)
-                {
-                    canvasScrollViewer.Width = ActualWidth;
-                    canvasScrollViewer.Height = ActualHeight - heightOffset;
-                }
+                kvp.Value.Width = ActualWidth;
+                kvp.Value.Height = ActualHeight;
             }
 
             settingsManager.CanvasWidth = ActualWidth;
@@ -2859,14 +2722,6 @@ namespace dvmconsole
         {
             if (settingsManager.LockWidgets || !isDragging || draggedElement == null)
                 return;
-
-            // Save the final position if it's a ChannelBox
-            if (draggedElement is ChannelBox channelBox)
-            {
-                double x = Canvas.GetLeft(channelBox);
-                double y = Canvas.GetTop(channelBox);
-                settingsManager.UpdateChannelPosition(channelBox.ChannelName, x, y);
-            }
 
             Cursor = Cursors.Arrow;
 
