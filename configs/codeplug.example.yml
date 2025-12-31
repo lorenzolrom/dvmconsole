@@ -74,3 +74,26 @@ zones:
       - name: "Channel C"
         system: "System 1"
         tgid: "16002"
+
+#
+# Patches (each patch becomes a tab in the Patches window)
+#
+patches:
+    # Textual name of the patch (this becomes the tab name)
+  - name: "Patch 1"
+    # List of channels in this patch
+    channels:
+        # Textual name of channel
+      - name: "Channel 1"
+        # System name this channel is linked to
+        system: "System 1"
+        # Talkgroup Id to send and receive traffic
+        tgid: "2001"
+  - name: "Patch 2"
+    channels:
+      - name: "Channel 2"
+        system: "System 1"
+        tgid: "15002"
+      - name: "Channel 3"
+        system: "System 1"
+        tgid: "15003"

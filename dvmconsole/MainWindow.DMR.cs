@@ -214,6 +214,9 @@ namespace dvmconsole
 
                         //Log.WriteLine($"PCM BYTE BUFFER {FneUtils.HexDump(pcm)}");
                         audioManager.AddTalkgroupStream(e.DstId.ToString(), pcm);
+                        
+                        // Add to patch buffer if this channel is in a patch
+                        AddPatchAudioFrame(channel.SystemName, e.DstId.ToString(), pcm);
                     }
                 }
             }
@@ -334,6 +337,9 @@ namespace dvmconsole
                         callHistoryWindow.ChannelKeyed(cpgChannel.Name, (int)e.SrcId, false); // TODO: Encrypted state
 
                         channel.Background = ChannelBox.GREEN_GRADIENT;
+                        
+                        // Handle patch behavior
+                        HandlePatchAudioReceived(system.Name, e.DstId.ToString(), cpgChannel.Name);
                     }
 
                     // reset the channel state if we're not Rx
@@ -361,6 +367,9 @@ namespace dvmconsole
                         
                         // Update tab audio indicator
                         Dispatcher.Invoke(() => UpdateTabAudioIndicatorForChannel(channel));
+
+                        // Handle patch behavior - drop PTT on other patch channels
+                        HandlePatchAudioEnded(system.Name, e.DstId.ToString(), cpgChannel.Name);
 
                         TimeSpan callDuration = pktTime - systemStatuses[cpgChannel.Name + e.Slot].RxStart;
                         Log.WriteLine($"({system.Name}) DMRD: Traffic *CALL END       * PEER {e.PeerId} SYS {system.Name} SRC_ID {e.SrcId} TGID {e.DstId} TS {e.Slot} DUR {callDuration} [STREAM ID {e.StreamId}]");

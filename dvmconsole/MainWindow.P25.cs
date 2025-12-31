@@ -400,6 +400,9 @@ namespace dvmconsole
                         }
 
                         audioManager.AddTalkgroupStream(e.DstId.ToString(), pcmData);
+                        
+                        // Add to patch buffer if this channel is in a patch
+                        AddPatchAudioFrame(channel.SystemName, e.DstId.ToString(), pcmData);
                     }
                 }
             }
@@ -541,6 +544,9 @@ namespace dvmconsole
 
                         if (channel.algId != P25Defines.P25_ALGO_UNENCRYPT)
                             Log.WriteLine($"({system.Name}) P25D: Traffic *CALL ENC PARMS * PEER {e.PeerId} SYS {system.Name} SRC_ID {e.SrcId} TGID {e.DstId} ALGID {channel.algId} KID {channel.kId} [STREAM ID {e.StreamId}]");
+                        
+                        // Handle patch behavior
+                        HandlePatchAudioReceived(system.Name, e.DstId.ToString(), cpgChannel.Name);
                     }
 
                     // reset the channel state if we're not Rx
@@ -560,6 +566,9 @@ namespace dvmconsole
                         
                         // Update tab audio indicator
                         Dispatcher.Invoke(() => UpdateTabAudioIndicatorForChannel(channel));
+
+                        // Handle patch behavior - drop PTT on other patch channels
+                        HandlePatchAudioEnded(system.Name, e.DstId.ToString(), cpgChannel.Name);
 
                         TimeSpan callDuration = pktTime - slot.RxStart;
                         Log.WriteLine($"({system.Name}) P25D: Traffic *CALL END       * PEER {e.PeerId} SYS {system.Name} SRC_ID {e.SrcId} TGID {e.DstId} DUR {callDuration} [STREAM ID {e.StreamId}]");

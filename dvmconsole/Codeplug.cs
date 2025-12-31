@@ -49,6 +49,10 @@ namespace dvmconsole
         /// List of zones (each zone becomes a tab).
         /// </summary>
         public List<Zone> Zones { get; set; }
+        /// <summary>
+        /// List of patches (each patch becomes a tab in the Patches window).
+        /// </summary>
+        public List<Patch> Patches { get; set; }
 
         /*
         ** Classes
@@ -276,5 +280,64 @@ namespace dvmconsole
 
             return null;
         }
+
+        /// <summary>
+        /// Helper to return a <see cref="Channel"/> by channel name from patches
+        /// </summary>
+        /// <param name="channelName"></param>
+        /// <returns></returns>
+        public Channel GetPatchChannelByName(string channelName)
+        {
+            if (Patches == null)
+                return null;
+
+            foreach (Patch patch in Patches)
+            {
+                Channel channel = patch.Channels.FirstOrDefault(c => c.Name == channelName);
+                if (channel != null)
+                    return channel;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Helper to get all patches that contain a specific channel
+        /// </summary>
+        /// <param name="channelName"></param>
+        /// <returns></returns>
+        public List<Patch> GetPatchesForChannel(string channelName)
+        {
+            List<Patch> result = new List<Patch>();
+            if (Patches == null)
+                return result;
+
+            foreach (Patch patch in Patches)
+            {
+                if (patch.Channels != null && patch.Channels.Any(c => c.Name == channelName))
+                    result.Add(patch);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Data structure representation of the data for a patch.
+        /// </summary>
+        public class Patch
+        {
+            /*
+            ** Properties
+            */
+
+            /// <summary>
+            /// Textual name for patch.
+            /// </summary>
+            public string Name { get; set; }
+            /// <summary>
+            /// List of channels in the patch.
+            /// </summary>
+            public List<Channel> Channels { get; set; }
+        } // public class Patch
     } //public class Codeplug
 } // namespace dvmconsole

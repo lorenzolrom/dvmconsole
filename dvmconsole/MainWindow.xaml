@@ -165,6 +165,14 @@
                         IsEnabled="{Binding DataContext.ControlsEnabled, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}" Style="{StaticResource MaterialDesignPaperDarkButton}">
                     <Image HorizontalAlignment="Left" VerticalAlignment="Center" Width="32" Height="32" Source="/dvmconsole;component/Assets/audio.png" IsHitTestVisible="False" />
                 </Button>
+
+                <Separator />
+
+                <!-- Patches -->
+                <Button x:Name="btnPatches" Height="42" Width="42" Click="Patches_Click" ToolTip="Patches" materialDesign:ButtonAssist.CornerRadius="5" Padding="0"
+                        IsEnabled="{Binding DataContext.ControlsEnabled, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}" Style="{StaticResource MaterialDesignPaperDarkButton}">
+                    <Image HorizontalAlignment="Left" VerticalAlignment="Center" Width="32" Height="32" Source="/dvmconsole;component/Assets/patch.png" IsHitTestVisible="False" />
+                </Button>
             </ToolBar>
         </ToolBarTray>
 

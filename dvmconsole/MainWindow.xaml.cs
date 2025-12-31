@@ -123,6 +123,7 @@ namespace dvmconsole
         private ChannelBox playbackChannelBox;
 
         private CallHistoryWindow callHistoryWindow;
+        private PatchesWindow patchesWindow;
 
         public static string PLAYBACKTG = "LOCPLAYBACK";
         public static string PLAYBACKSYS = "Local Playback";
@@ -135,6 +136,21 @@ namespace dvmconsole
 
         private Dictionary<string, SlotStatus> systemStatuses = new Dictionary<string, SlotStatus>();
         private FneSystemManager fneSystemManager = new FneSystemManager();
+        
+        // Patch tracking: maps channel name to list of other channel names in the same patch
+        private Dictionary<string, List<string>> patchChannels = new Dictionary<string, List<string>>();
+        // Tracks which channels are currently patching (to avoid loops)
+        private HashSet<string> activePatchChannels = new HashSet<string>();
+        // Tracks connection status of peer systems
+        private Dictionary<string, bool> peerConnectionStatus = new Dictionary<string, bool>();
+        // Tracks which channel is currently receiving audio for a patch (source channel)
+        private Dictionary<string, string> patchSourceChannels = new Dictionary<string, string>();
+        // Buffers PCM audio for patching: key is patch channel name, value is queue of PCM frames
+        private Dictionary<string, Queue<byte[]>> patchAudioBuffers = new Dictionary<string, Queue<byte[]>>();
+        // Tasks for feeding patch audio
+        private Dictionary<string, Task> patchAudioTasks = new Dictionary<string, Task>();
+        // Cancellation tokens for patch audio tasks
+        private Dictionary<string, CancellationTokenSource> patchAudioCancellations = new Dictionary<string, CancellationTokenSource>();
 
         private bool selectAll = false;
         private KeyboardManager keyboardManager;
@@ -170,6 +186,7 @@ namespace dvmconsole
             settingsManager.LoadSettings();
             InitializeKeyboardShortcuts();
             callHistoryWindow = new CallHistoryWindow(settingsManager, CallHistoryWindow.MAX_CALL_HISTORY);
+            patchesWindow = new PatchesWindow(settingsManager, null);
 
             selectedChannelsManager = new SelectedChannelsManager();
             flashingManager = new FlashingBackgroundManager(null, channelsCanvas, null, this);
@@ -684,6 +701,29 @@ namespace dvmconsole
             channelsCanvas.Children.Clear();
             elementToTabMap.Clear();
             systemStatuses.Clear();
+            patchChannels.Clear();
+            activePatchChannels.Clear();
+            peerConnectionStatus.Clear();
+            patchSourceChannels.Clear();
+            
+            // Cancel and clear patch audio tasks
+            foreach (var cts in patchAudioCancellations.Values)
+            {
+                cts.Cancel();
+                cts.Dispose();
+            }
+            patchAudioCancellations.Clear();
+            patchAudioTasks.Clear();
+            
+            // Clear patch audio buffers
+            foreach (var buffer in patchAudioBuffers.Values)
+            {
+                lock (buffer)
+                {
+                    buffer.Clear();
+                }
+            }
+            patchAudioBuffers.Clear();
 
             fneSystemManager.ClearAll();
 
@@ -761,6 +801,13 @@ namespace dvmconsole
                 GenerateChannelWidgets();
                 EnableControls();
                 MainWindow_SizeChanged(this, null);
+                
+                // Update patches window with new codeplug
+                if (patchesWindow != null)
+                    patchesWindow.UpdateCodeplug(Codeplug);
+                
+                // Build patch channels dictionary
+                BuildPatchChannels();
             }
             catch (Exception ex)
             {
@@ -878,6 +925,7 @@ namespace dvmconsole
                     peer.peer.PeerConnected += (sender, response) =>
                     {
                         Log.WriteLine("FNE Peer connected");
+                        peerConnectionStatus[system.Name] = true;
                         Dispatcher.Invoke(() =>
                         {
                             EnableCommandControls();
@@ -889,6 +937,7 @@ namespace dvmconsole
                     peer.peer.PeerDisconnected += (response) =>
                     {
                         Log.WriteLine("FNE Peer disconnected");
+                        peerConnectionStatus[system.Name] = false;
                         Dispatcher.Invoke(() =>
                         {
                             DisableCommandControls();
@@ -1082,6 +1131,380 @@ namespace dvmconsole
                 elementToTabMap[playbackChannelBox] = defaultTab;
 
             Cursor = Cursors.Arrow;
+        }
+
+        /// <summary>
+        /// Builds the patch channels dictionary from the codeplug.
+        /// </summary>
+        private void BuildPatchChannels()
+        {
+            patchChannels.Clear();
+            activePatchChannels.Clear();
+
+            if (Codeplug?.Patches == null)
+                return;
+
+            foreach (var patch in Codeplug.Patches)
+            {
+                if (patch.Channels == null || patch.Channels.Count < 2)
+                    continue;
+
+                // For each channel in the patch, create a list of all other channels in the same patch
+                foreach (var channel in patch.Channels)
+                {
+                    if (!patchChannels.ContainsKey(channel.Name))
+                        patchChannels[channel.Name] = new List<string>();
+
+                    foreach (var otherChannel in patch.Channels)
+                    {
+                        if (otherChannel.Name != channel.Name)
+                            patchChannels[channel.Name].Add(otherChannel.Name);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Checks if a channel (by system and tgid) is part of any patch and returns the patch channels.
+        /// </summary>
+        /// <param name="systemName">System name</param>
+        /// <param name="tgid">Talkgroup ID</param>
+        /// <returns>List of other channel names in the same patch, or null if not in a patch</returns>
+        private List<string> GetPatchChannelsForSystemTgid(string systemName, string tgid)
+        {
+            if (Codeplug?.Patches == null)
+                return null;
+
+            // Find which patch contains a channel matching this system and tgid
+            foreach (var patch in Codeplug.Patches)
+            {
+                if (patch.Channels == null)
+                    continue;
+
+                bool foundMatch = false;
+                foreach (var patchChannel in patch.Channels)
+                {
+                    if (patchChannel.System == systemName && patchChannel.Tgid == tgid)
+                    {
+                        foundMatch = true;
+                        break;
+                    }
+                }
+
+                if (foundMatch)
+                {
+                    // Return all other channels in this patch
+                    List<string> otherChannels = new List<string>();
+                    foreach (var patchChannel in patch.Channels)
+                    {
+                        if (patchChannel.System != systemName || patchChannel.Tgid != tgid)
+                        {
+                            // Find the channel name from zones
+                            var zoneChannel = Codeplug.GetChannelByName(patchChannel.Name);
+                            if (zoneChannel != null)
+                                otherChannels.Add(patchChannel.Name);
+                        }
+                    }
+                    return otherChannels.Count > 0 ? otherChannels : null;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Handles patch behavior when audio is received on a patch channel.
+        /// Starts patching audio to other channels in the patch.
+        /// </summary>
+        /// <param name="systemName">System name receiving audio</param>
+        /// <param name="tgid">Talkgroup ID receiving audio</param>
+        /// <param name="receivingChannelName">Name of the channel receiving audio</param>
+        private void HandlePatchAudioReceived(string systemName, string tgid, string receivingChannelName)
+        {
+            // Check if console is located (connected to at least one FNE system)
+            bool isLocated = false;
+            foreach (var system in Codeplug?.Systems ?? new List<Codeplug.System>())
+            {
+                if (peerConnectionStatus.ContainsKey(system.Name) && peerConnectionStatus[system.Name])
+                {
+                    isLocated = true;
+                    break;
+                }
+            }
+
+            if (!isLocated)
+                return;
+
+            // Check if this system/tgid is in a patch
+            var otherChannelNames = GetPatchChannelsForSystemTgid(systemName, tgid);
+            if (otherChannelNames == null || otherChannelNames.Count == 0)
+                return;
+
+            // Mark this channel as actively patching
+            activePatchChannels.Add(receivingChannelName);
+            patchSourceChannels[receivingChannelName] = receivingChannelName;
+
+            // Initialize audio buffers for patch channels
+            foreach (var otherChannelName in otherChannelNames)
+            {
+                if (!patchAudioBuffers.ContainsKey(otherChannelName))
+                    patchAudioBuffers[otherChannelName] = new Queue<byte[]>();
+            }
+
+            // Trigger PTT on all other channels in the patch (FIFO order)
+            Dispatcher.Invoke(() =>
+            {
+                foreach (var otherChannelName in otherChannelNames)
+                {
+                    // Skip if this channel is already actively patching (avoid loops)
+                    if (activePatchChannels.Contains(otherChannelName))
+                        continue;
+
+                    // Find the ChannelBox for the other channel
+                    ChannelBox otherChannelBox = null;
+                    foreach (var canvas in tabCanvases.Values)
+                    {
+                        foreach (UIElement element in canvas.Children)
+                        {
+                            if (element is ChannelBox cb && cb.ChannelName == otherChannelName)
+                            {
+                                otherChannelBox = cb;
+                                break;
+                            }
+                        }
+                        if (otherChannelBox != null)
+                            break;
+                    }
+
+                    if (otherChannelBox != null && otherChannelBox.IsSelected)
+                    {
+                        // Trigger PTT on this channel
+                        otherChannelBox.TriggerPTTState(true);
+                        activePatchChannels.Add(otherChannelName);
+                        
+                        // Start feeding audio to this channel
+                        StartPatchAudioFeed(otherChannelName, systemName, tgid);
+                    }
+                }
+            });
+        }
+
+        /// <summary>
+        /// Starts feeding captured audio to a patch channel.
+        /// </summary>
+        /// <param name="channelName">Channel name to feed audio to</param>
+        /// <param name="systemName">System name (for finding codeplug channel)</param>
+        /// <param name="tgid">Talkgroup ID (for finding codeplug channel)</param>
+        private void StartPatchAudioFeed(string channelName, string systemName, string tgid)
+        {
+            // Cancel any existing feed for this channel
+            if (patchAudioTasks.ContainsKey(channelName))
+            {
+                if (patchAudioCancellations.ContainsKey(channelName))
+                {
+                    patchAudioCancellations[channelName].Cancel();
+                    patchAudioCancellations[channelName].Dispose();
+                    patchAudioCancellations.Remove(channelName);
+                }
+                patchAudioTasks.Remove(channelName);
+            }
+
+            // Create new cancellation token source
+            var cts = new CancellationTokenSource();
+            patchAudioCancellations[channelName] = cts;
+
+            // Get channel info on UI thread
+            ChannelBox channelBox = null;
+            Codeplug.Channel cpgChannel = null;
+            Codeplug.System systemObj = null;
+            PeerSystem fne = null;
+
+            Dispatcher.Invoke(() =>
+            {
+                // Find the ChannelBox
+                foreach (var canvas in tabCanvases.Values)
+                {
+                    foreach (UIElement element in canvas.Children)
+                    {
+                        if (element is ChannelBox cb && cb.ChannelName == channelName)
+                        {
+                            channelBox = cb;
+                            break;
+                        }
+                    }
+                    if (channelBox != null)
+                        break;
+                }
+
+                if (channelBox == null || !channelBox.IsSelected)
+                    return;
+
+                cpgChannel = Codeplug.GetChannelByName(channelName);
+                if (cpgChannel == null)
+                    return;
+
+                systemObj = Codeplug.GetSystemForChannel(channelName);
+                if (systemObj == null)
+                    return;
+
+                fne = fneSystemManager.GetFneSystem(systemObj.Name);
+                if (fne == null)
+                    return;
+
+                // Initialize stream ID if needed
+                if (channelBox.TxStreamId == 0)
+                    channelBox.TxStreamId = fne.NewStreamId();
+            });
+
+            if (channelBox == null || cpgChannel == null || systemObj == null || fne == null)
+                return;
+
+            // Capture for closure
+            var finalChannelBox = channelBox;
+            var finalCpgChannel = cpgChannel;
+            var finalSystem = systemObj;
+            var finalFne = fne;
+
+            // Start task to feed audio
+            var task = Task.Run(async () =>
+            {
+                // Feed audio frames from buffer
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    byte[] pcmFrame = null;
+                    if (patchAudioBuffers.ContainsKey(channelName))
+                    {
+                        lock (patchAudioBuffers[channelName])
+                        {
+                            if (patchAudioBuffers[channelName].Count > 0)
+                                pcmFrame = patchAudioBuffers[channelName].Dequeue();
+                        }
+                    }
+
+                    if (pcmFrame != null)
+                    {
+                        // Feed PCM to encode function
+                        Dispatcher.Invoke(() =>
+                        {
+                            if (finalChannelBox.IsSelected && finalChannelBox.PttState)
+                            {
+                                if (finalCpgChannel.GetChannelMode() == Codeplug.ChannelMode.P25)
+                                    P25EncodeAudioFrame(pcmFrame, finalFne, finalChannelBox, finalCpgChannel, finalSystem);
+                                else if (finalCpgChannel.GetChannelMode() == Codeplug.ChannelMode.DMR)
+                                    DMREncodeAudioFrame(pcmFrame, finalFne, finalChannelBox, finalCpgChannel, finalSystem);
+                            }
+                        });
+                    }
+
+                    // Wait for next frame (P25/DMR frame rate is ~180ms/60ms, use 20ms for smoother feeding)
+                    try
+                    {
+                        await Task.Delay(20, cts.Token);
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        break;
+                    }
+                }
+            }, cts.Token);
+
+            patchAudioTasks[channelName] = task;
+        }
+
+        /// <summary>
+        /// Adds PCM audio frame to patch buffers for retransmission.
+        /// </summary>
+        /// <param name="systemName">System name receiving audio</param>
+        /// <param name="tgid">Talkgroup ID receiving audio</param>
+        /// <param name="pcmData">PCM audio data to buffer</param>
+        private void AddPatchAudioFrame(string systemName, string tgid, byte[] pcmData)
+        {
+            var otherChannelNames = GetPatchChannelsForSystemTgid(systemName, tgid);
+            if (otherChannelNames == null)
+                return;
+
+            foreach (var channelName in otherChannelNames)
+            {
+                if (patchAudioBuffers.ContainsKey(channelName) && activePatchChannels.Contains(channelName))
+                {
+                    lock (patchAudioBuffers[channelName])
+                    {
+                        patchAudioBuffers[channelName].Enqueue(pcmData);
+                        // Limit buffer size to prevent memory issues
+                        while (patchAudioBuffers[channelName].Count > 100)
+                            patchAudioBuffers[channelName].Dequeue();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles patch behavior when audio receiving ends on a patch channel.
+        /// </summary>
+        /// <param name="systemName">System name that was receiving</param>
+        /// <param name="tgid">Talkgroup ID that was receiving</param>
+        /// <param name="receivingChannelName">Name of the channel that was receiving audio</param>
+        private void HandlePatchAudioEnded(string systemName, string tgid, string receivingChannelName)
+        {
+            // Check if this system/tgid is in a patch
+            var otherChannelNames = GetPatchChannelsForSystemTgid(systemName, tgid);
+            if (otherChannelNames == null)
+                return;
+
+            // Remove from active patch channels
+            activePatchChannels.Remove(receivingChannelName);
+            patchSourceChannels.Remove(receivingChannelName);
+
+            // Stop audio feeds and drop PTT on all other channels in the patch
+            Dispatcher.Invoke(() =>
+            {
+                foreach (var otherChannelName in otherChannelNames)
+                {
+                    // Stop audio feed
+                    if (patchAudioTasks.ContainsKey(otherChannelName))
+                    {
+                        if (patchAudioCancellations.ContainsKey(otherChannelName))
+                        {
+                            patchAudioCancellations[otherChannelName].Cancel();
+                            patchAudioCancellations[otherChannelName].Dispose();
+                            patchAudioCancellations.Remove(otherChannelName);
+                        }
+                        patchAudioTasks.Remove(otherChannelName);
+                    }
+
+                    // Clear buffer
+                    if (patchAudioBuffers.ContainsKey(otherChannelName))
+                    {
+                        lock (patchAudioBuffers[otherChannelName])
+                        {
+                            patchAudioBuffers[otherChannelName].Clear();
+                        }
+                    }
+
+                    // Find the ChannelBox for the other channel
+                    ChannelBox otherChannelBox = null;
+                    foreach (var canvas in tabCanvases.Values)
+                    {
+                        foreach (UIElement element in canvas.Children)
+                        {
+                            if (element is ChannelBox cb && cb.ChannelName == otherChannelName)
+                            {
+                                otherChannelBox = cb;
+                                break;
+                            }
+                        }
+                        if (otherChannelBox != null)
+                            break;
+                    }
+
+                    if (otherChannelBox != null && otherChannelBox.IsSelected && otherChannelBox.PttState)
+                    {
+                        // Drop PTT on this channel
+                        otherChannelBox.TriggerPTTState(false);
+                        activePatchChannels.Remove(otherChannelName);
+                    }
+                }
+            });
         }
 
         /// <summary>
@@ -1640,6 +2063,12 @@ namespace dvmconsole
                                 
                                 // Update tab audio indicator
                                 UpdateTabAudioIndicatorForChannel(channel);
+                                
+                                // Handle patch behavior - drop PTT on other patch channels
+                                Codeplug.System timeoutSystem = Codeplug.GetSystemForChannel(channel.ChannelName);
+                                Codeplug.Channel timeoutCpgChannel = Codeplug.GetChannelByName(channel.ChannelName);
+                                if (timeoutSystem != null && timeoutCpgChannel != null)
+                                    HandlePatchAudioEnded(timeoutSystem.Name, timeoutCpgChannel.Tgid, channel.ChannelName);
                             });
                         }
                     }
@@ -3146,6 +3575,22 @@ namespace dvmconsole
                     callHistoryWindow.Left = Left + ActualWidth + 5;
                     callHistoryWindow.Top = Top;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void Patches_Click(object sender, RoutedEventArgs e)
+        {
+            patchesWindow.Owner = this;
+            if (patchesWindow.Visibility == Visibility.Visible)
+                patchesWindow.Hide();
+            else
+            {
+                patchesWindow.Show();
             }
         }
 

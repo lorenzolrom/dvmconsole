@@ -43,6 +43,8 @@
     <None Remove="Assets\key.png" />
     <None Remove="Assets\page.png" />
     <None Remove="Assets\pageselect.png" />
+    <None Remove="Assets\patch.png" />
+    <None Remove="Assets\ind_transmit_busy.png" />
     <None Remove="Assets\pttselect.png" />
     <None Remove="Assets\select.png" />
     <None Remove="Assets\whackerlink-logo.png" />
@@ -133,6 +135,12 @@
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>
     <Resource Include="Assets\pageselect.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Assets\patch.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Assets\ind_transmit_busy.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>
     <Resource Include="Assets\pttselect.png">
